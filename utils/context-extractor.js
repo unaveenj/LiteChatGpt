@@ -131,10 +131,10 @@ class ContextExtractor {
     const concepts = this.extractConcepts(messages);
     const questions = this.extractOpenQuestions(messages);
 
-    // Build summary using improved template
-    const summary = `I'm continuing our previous conversation. Here's the checkpoint:
+    // Build summary with title instruction at the very top
+    const summary = `IMPORTANT: Please name this chat session: "${versionedTitle}"
 
-Source: ${originalTitle}
+I'm continuing our previous conversation from "${originalTitle}". Here's the checkpoint:
 
 Summary:
 • Main topic: ${topics.length > 0 ? topics.join(', ') : 'Continuing discussion'}
@@ -144,7 +144,7 @@ Summary:
 Recent conversation history:
 ${this.formatMessages(messages)}
 
-Please continue from where we left off. Also, please set this chat's title to: "${versionedTitle}"`;
+Please continue from where we left off and remember to use the exact title specified above.`;
 
     return summary;
   }
