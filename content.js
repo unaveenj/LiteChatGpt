@@ -111,12 +111,12 @@ async function handleLiteModeClick() {
       throw new Error('No messages found to extract. Chat may be empty.');
     }
 
-    // 4. Build context summary
-    const contextSummary = buildContextSummary(currentTitle, messages);
-
-    // 5. Get versioned title
+    // 4. Get versioned title
     const versionedTitle = await getVersionedTitle(currentTitle);
     console.log('[LiteChatGPT] Versioned title:', versionedTitle);
+
+    // 5. Build context summary with versioned title
+    const contextSummary = buildContextSummary(currentTitle, messages, versionedTitle);
 
     // 6. Send to background script to create new chat
     chrome.runtime.sendMessage({
@@ -178,7 +178,13 @@ async function checkForPendingInjection() {
         injectContext(textarea, contextSummary);
 
         // Show success notification
-        showNotification(`Context injected! Chat: ${versionedTitle}`, 'success');
+        showNotification(`Context injected! Rename chat to: ${versionedTitle}`, 'success');
+
+        // Store versioned title for later rename
+        await chrome.storage.local.set({ pendingTitleRename: versionedTitle });
+
+        // Set up title rename after first message
+        setupTitleRename(versionedTitle);
 
         // Clear pending injection
         await chrome.storage.local.remove('pendingInjection');
@@ -189,6 +195,125 @@ async function checkForPendingInjection() {
   } catch (error) {
     console.error('[LiteChatGPT] Error during injection check:', error);
     showNotification('Failed to inject context. Please try again.', 'error');
+  }
+}
+
+/**
+ * Set up automatic title rename after first message is sent
+ * @param {string} targetTitle - The desired title
+ */
+function setupTitleRename(targetTitle) {
+  console.log('[LiteChatGPT] Setting up title rename to:', targetTitle);
+
+  // Wait for chat title to appear (after first message is sent)
+  const checkInterval = setInterval(async () => {
+    const titleElement = DOMSelectors.findElement(DOMSelectors.getTitleSelectors());
+
+    if (titleElement && titleElement.textContent.trim() && titleElement.textContent.trim() !== 'ChatGPT') {
+      console.log('[LiteChatGPT] Chat title detected:', titleElement.textContent);
+
+      // Try to rename the chat
+      const renamed = await attemptTitleRename(targetTitle);
+
+      if (renamed) {
+        clearInterval(checkInterval);
+        await chrome.storage.local.remove('pendingTitleRename');
+        showNotification(`Chat renamed to: ${targetTitle}`, 'success');
+      }
+    }
+  }, 2000); // Check every 2 seconds
+
+  // Stop checking after 2 minutes
+  setTimeout(() => {
+    clearInterval(checkInterval);
+    console.log('[LiteChatGPT] Title rename timeout - manual rename may be needed');
+  }, 120000);
+}
+
+/**
+ * Attempt to rename the chat title
+ * @param {string} newTitle - The new title to set
+ * @returns {Promise<boolean>} - Success status
+ */
+async function attemptTitleRename(newTitle) {
+  try {
+    // Try multiple strategies to find and click rename button
+    const renameSelectors = [
+      'button[aria-label*="Rename"]',
+      'button[title*="Rename"]',
+      '[data-testid="rename-button"]',
+      'button:has-text("Rename")'
+    ];
+
+    let renameButton = null;
+    for (const selector of renameSelectors) {
+      try {
+        renameButton = document.querySelector(selector);
+        if (renameButton) break;
+      } catch (e) {
+        continue;
+      }
+    }
+
+    if (!renameButton) {
+      // Try clicking on title to trigger edit mode
+      const titleElement = DOMSelectors.findElement(DOMSelectors.getTitleSelectors());
+      if (titleElement) {
+        titleElement.click();
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        // Look for input field
+        const titleInput = document.querySelector('input[value*=""]') ||
+                          document.querySelector('input[type="text"]');
+
+        if (titleInput) {
+          titleInput.value = newTitle;
+          titleInput.dispatchEvent(new Event('input', { bubbles: true }));
+          titleInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+          // Press Enter to confirm
+          titleInput.dispatchEvent(new KeyboardEvent('keydown', {
+            key: 'Enter',
+            code: 'Enter',
+            keyCode: 13,
+            bubbles: true
+          }));
+
+          console.log('[LiteChatGPT] Title renamed via input field');
+          return true;
+        }
+      }
+
+      console.log('[LiteChatGPT] Could not find rename mechanism');
+      return false;
+    }
+
+    // Click rename button
+    renameButton.click();
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // Find input field and set title
+    const inputField = document.querySelector('input[type="text"]');
+    if (inputField) {
+      inputField.value = newTitle;
+      inputField.dispatchEvent(new Event('input', { bubbles: true }));
+
+      // Press Enter or click confirm button
+      inputField.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter',
+        code: 'Enter',
+        keyCode: 13,
+        bubbles: true
+      }));
+
+      console.log('[LiteChatGPT] Title renamed successfully');
+      return true;
+    }
+
+    return false;
+  } catch (error) {
+    console.error('[LiteChatGPT] Error renaming title:', error);
+    return false;
   }
 }
 

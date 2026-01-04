@@ -125,14 +125,15 @@ class ContextExtractor {
    * @param {Array} messages - Array of message objects
    * @returns {string} - Formatted context summary
    */
-  buildContextSummary(originalTitle, messages) {
+  buildContextSummary(originalTitle, messages, versionedTitle) {
     // Extract summary elements
     const topics = this.extractTopics(messages);
     const concepts = this.extractConcepts(messages);
     const questions = this.extractOpenQuestions(messages);
 
-    // Build summary using PRD template
-    const summary = `Context from previous chat:
+    // Build summary using improved template
+    const summary = `I'm continuing our previous conversation. Here's the checkpoint:
+
 Source: ${originalTitle}
 
 Summary:
@@ -140,10 +141,10 @@ Summary:
 • Concepts covered: ${concepts.length > 0 ? concepts.join(', ') : 'Various topics'}
 • Open questions / next steps: ${questions.length > 0 ? questions.join('; ') : 'To be determined'}
 
-Recent conversation:
+Recent conversation history:
 ${this.formatMessages(messages)}
 
-Continue from here.`;
+Please continue from where we left off. Also, please set this chat's title to: "${versionedTitle}"`;
 
     return summary;
   }
@@ -255,8 +256,8 @@ function extractMessages(count = 8) {
   return new ContextExtractor(count).extractMessages();
 }
 
-function buildContextSummary(title, messages) {
-  return new ContextExtractor().buildContextSummary(title, messages);
+function buildContextSummary(title, messages, versionedTitle) {
+  return new ContextExtractor().buildContextSummary(title, messages, versionedTitle);
 }
 
 // Make available globally

@@ -24,3 +24,6 @@ __pycache__/
 # Temporary files
 *.tmp
 .cache/
+
+# Claude Code config
+.claude/
