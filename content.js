@@ -74,9 +74,27 @@ function injectFloatingButton() {
 }
 
 /**
+ * Check if extension context is still valid
+ */
+function isExtensionContextValid() {
+  try {
+    return chrome.runtime && chrome.runtime.id;
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
  * Main handler for Lite Mode activation
  */
 async function handleLiteModeClick() {
+  // Check if extension context is valid
+  if (!isExtensionContextValid()) {
+    showNotification('Extension updated. Please refresh this page.', 'error');
+    console.log('[LiteChatGPT] Extension context invalidated - page refresh needed');
+    return;
+  }
+
   // Prevent double-clicks
   if (isProcessing) {
     console.log('[LiteChatGPT] Already processing, please wait...');
@@ -119,26 +137,49 @@ async function handleLiteModeClick() {
     const contextSummary = buildContextSummary(currentTitle, messages, versionedTitle);
 
     // 6. Send to background script to create new chat
-    chrome.runtime.sendMessage({
-      action: 'CREATE_LITE_CHAT',
-      payload: {
-        contextSummary,
-        versionedTitle,
-        originalTitle: currentTitle
-      }
-    }, (response) => {
-      if (chrome.runtime.lastError) {
-        throw new Error(chrome.runtime.lastError.message);
-      }
+    try {
+      chrome.runtime.sendMessage({
+        action: 'CREATE_LITE_CHAT',
+        payload: {
+          contextSummary,
+          versionedTitle,
+          originalTitle: currentTitle
+        }
+      }, (response) => {
+        if (chrome.runtime.lastError) {
+          // Check if it's an extension context error
+          if (chrome.runtime.lastError.message.includes('Extension context invalidated')) {
+            showNotification('Extension updated. Please refresh this page.', 'error');
+          } else {
+            throw new Error(chrome.runtime.lastError.message);
+          }
+          return;
+        }
 
-      if (response && response.success) {
-        showNotification('Lite Mode activated! Opening new chat...', 'success');
+        if (response && response.success) {
+          showNotification('Lite Mode activated! Opening new chat...', 'success');
+        }
+      });
+    } catch (error) {
+      if (error.message.includes('Extension context invalidated')) {
+        showNotification('Extension updated. Please refresh this page.', 'error');
+        return;
       }
-    });
+      throw error;
+    }
 
   } catch (error) {
     console.error('[LiteChatGPT] Error in Lite Mode:', error);
-    showNotification(`Error: ${error.message}`, 'error');
+
+    // Handle specific error types
+    if (error.message.includes('Extension context invalidated') ||
+        error.message.includes('message port closed')) {
+      showNotification('Extension updated. Please refresh this page.', 'error');
+    } else if (error.message.includes('No messages found')) {
+      showNotification('Chat is empty. Add more messages first.', 'error');
+    } else {
+      showNotification(`Error: ${error.message}`, 'error');
+    }
 
     // Reset button state
     const button = document.getElementById('litechat-float-btn');
